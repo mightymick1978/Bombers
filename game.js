@@ -1,0 +1,294 @@
+// game.js
+
+let playerDeck = [];
+let cpuDeck = [];
+let playerTurn = true;
+let gameOver = false;
+
+const categories = ["Speed", "Power", "Service Ceiling", "Flight Range"];
+
+function startGame() {
+  gameOver = false;
+  playerTurn = true;
+  // Mische Karten und teile auf
+  const shuffled = shuffleArray(cards.slice());
+  playerDeck = shuffled.filter((_, i) => i % 2 === 0);
+  cpuDeck = shuffled.filter((_, i) => i % 2 === 1);
+  updateUI();
+  showMessage("Spiel gestartet! Du bist am Zug.");
+  renderCards();
+}
+
+function shuffleArray(array) {
+  for (let i = array.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [array[i], array[j]] = [array[j], array[i]];
+  }
+  return array;
+}
+
+function renderCards() {
+  const gameBoard = document.getElementById("game-board");
+  gameBoard.innerHTML = "";
+
+  // Spielerkarte (immer aufgedeckt)
+  const playerCard = createCardElement(playerDeck[0], true);
+  playerCard.classList.add("player-card");
+  gameBoard.appendChild(playerCard);
+
+  // CPU-Karte (verdeckt, außer CPU ist am Zug)
+  const cpuCard = createCardElement(cpuDeck[0], playerTurn ? false : true);
+  cpuCard.classList.add("cpu-card");
+  gameBoard.appendChild(cpuCard);
+
+  // Kartenzähler
+  updateCardCounts();
+}
+
+function createCardElement(card, faceUp) {
+  const cardEl = document.createElement("div");
+  cardEl.classList.add("card");
+  if (!faceUp) {
+    cardEl.classList.add("card-back");
+    cardEl.style.backgroundImage = "url('card_back.png')";
+    return cardEl;
+  }
+
+  // Vorderseite
+  cardEl.innerHTML = `
+    <img src="${card.image}" alt="${card.name}" class="card-image" />
+    <h3 class="card-name">${card.name}</h3>
+    <ul class="categories">
+      ${categories
+        .map(
+          (cat) =>
+            `<li class="category" data-category="${cat}">${cat}: <span class="value">${card.categories[cat]}</span></li>`
+        )
+        .join("")}
+    </ul>
+  `;
+
+  if (playerTurn) {
+    // Nur beim Spieler sind Kategorien klickbar
+    const categoryEls = cardEl.querySelectorAll(".category");
+    categoryEls.forEach((el) => {
+      el.style.cursor = "pointer";
+      el.addEventListener("click", () => {
+        if (!gameOver) {
+          categorySelected(el.dataset.category);
+        }
+      });
+    });
+  }
+
+  return cardEl;
+}
+
+function categorySelected(category) {
+  if (!playerTurn || gameOver) return;
+
+  const playerCard = playerDeck[0];
+  const cpuCard = cpuDeck[0];
+
+  const playerValue = playerCard.categories[category];
+  const cpuValue = cpuCard.categories[category];
+
+  // Karten aufdecken
+  playerTurn = false;
+  renderCards();
+
+  // Werte farblich hervorheben
+  highlightValues(category, playerValue, cpuValue);
+
+  // Gewinner ermitteln
+  let roundWinner = null;
+  if (playerValue > cpuValue) {
+    roundWinner = "player";
+    showMessage(`Du hast die Runde gewonnen! (${category}: ${playerValue} vs. ${cpuValue})`);
+    playSound("win");
+    // Spieler bekommt beide Karten ans Ende
+    playerDeck.push(playerDeck.shift());
+    playerDeck.push(cpuDeck.shift());
+  } else if (cpuValue > playerValue) {
+    roundWinner = "cpu";
+    showMessage(`CPU hat die Runde gewonnen! (${category}: ${cpuValue} vs. ${playerValue})`);
+    // CPU bekommt beide Karten ans Ende
+    cpuDeck.push(cpuDeck.shift());
+    cpuDeck.push(playerDeck.shift());
+  } else {
+    roundWinner = "draw";
+    showMessage(`Unentschieden! Beide Karten kommen zurück.`);
+    // Beide Karten ans Ende ihrer Decks
+    playerDeck.push(playerDeck.shift());
+    cpuDeck.push(cpuDeck.shift());
+  }
+
+  updateCardCounts();
+
+  // Prüfen ob Spiel vorbei
+  if (playerDeck.length === 0) {
+    gameOver = true;
+    showMessage("CPU hat das Spiel gewonnen!");
+    playFireworks();
+    playSound("win");
+    return;
+  } else if (cpuDeck.length === 0) {
+    gameOver = true;
+    showMessage("Du hast das Spiel gewonnen!");
+    playFireworks();
+    playSound("win");
+    return;
+  }
+
+  // CPU wählt Kategorie nach kurzer Pause, wenn CPU gewinnt oder unentschieden
+  if (roundWinner === "cpu" || roundWinner === "draw") {
+    setTimeout(() => {
+      cpuTurn();
+    }, 2000);
+  } else {
+    // Spieler bleibt am Zug
+    playerTurn = true;
+    setTimeout(() => {
+      renderCards();
+      showMessage("Du bist am Zug. Wähle eine Kategorie.");
+    }, 2000);
+  }
+}
+
+function cpuTurn() {
+  if (gameOver) return;
+
+  playerTurn = false;
+  renderCards();
+
+  const cpuCard = cpuDeck[0];
+  // CPU wählt zufällig beste Kategorie (höchster Wert)
+  let bestCategory = categories[0];
+  let bestValue = cpuCard.categories[bestCategory];
+  categories.forEach((cat) => {
+    if (cpuCard.categories[cat] > bestValue) {
+      bestCategory = cat;
+      bestValue = cpuCard.categories[cat];
+    }
+  });
+
+  categorySelected(bestCategory);
+}
+
+function highlightValues(category, playerValue, cpuValue) {
+  const playerCardEl = document.querySelector(".player-card");
+  const cpuCardEl = document.querySelector(".cpu-card");
+
+  if (!playerCardEl || !cpuCardEl) return;
+
+  const playerCatEl = playerCardEl.querySelector(`.category[data-category="${category}"] .value`);
+  const cpuCatEl = cpuCardEl.querySelector(`.category[data-category="${category}"] .value`);
+
+  if (playerValue > cpuValue) {
+    playerCatEl.style.color = "green";
+    cpuCatEl.style.color = "red";
+  } else if (cpuValue > playerValue) {
+    playerCatEl.style.color = "red";
+    cpuCatEl.style.color = "green";
+  } else {
+    playerCatEl.style.color = "orange";
+    cpuCatEl.style.color = "orange";
+  }
+}
+
+function updateCardCounts() {
+  const playerCountEl = document.getElementById("player-card-count");
+  const cpuCountEl = document.getElementById("cpu-card-count");
+
+  if (playerCountEl) playerCountEl.textContent = `Karten: ${playerDeck.length}`;
+  if (cpuCountEl) cpuCountEl.textContent = `Karten: ${cpuDeck.length}`;
+}
+
+function showMessage(text) {
+  const messageEl = document.getElementById("message");
+  if (messageEl) messageEl.textContent = text;
+}
+
+function playSound(name) {
+  if (typeof window.playSound === "function") {
+    window.playSound(name);
+  }
+}
+
+function playFireworks() {
+  // Einfache Feuerwerksanimation mit Canvas
+  const container = document.getElementById("game-container");
+  if (!container) return;
+
+  const canvas = document.createElement("canvas");
+  canvas.id = "fireworks-canvas";
+  canvas.style.position = "absolute";
+  canvas.style.top = 0;
+  canvas.style.left = 0;
+  canvas.style.width = "100%";
+  canvas.style.height = "100%";
+  canvas.style.pointerEvents = "none";
+  container.appendChild(canvas);
+
+  const ctx = canvas.getContext("2d");
+  canvas.width = container.clientWidth;
+  canvas.height = container.clientHeight;
+
+  let particles = [];
+
+  function createParticle() {
+    return {
+      x: Math.random() * canvas.width,
+      y: Math.random() * canvas.height / 2,
+      radius: Math.random() * 3 + 2,
+      color: `hsl(${Math.random() * 360}, 100%, 50%)`,
+      speedX: (Math.random() - 0.5) * 5,
+      speedY: (Math.random() - 0.5) * 5,
+      alpha: 1,
+      decay: 0.01 + Math.random() * 0.02
+    };
+  }
+
+  for (let i = 0; i < 100; i++) {
+    particles.push(createParticle());
+  }
+
+  function animate() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    particles.forEach((p, i) => {
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(${hexToRgb(p.color)},${p.alpha})`;
+      ctx.fill();
+
+      p.x += p.speedX;
+      p.y += p.speedY;
+      p.alpha -= p.decay;
+
+      if (p.alpha <= 0) {
+        particles[i] = createParticle();
+      }
+    });
+    if (!gameOver) {
+      container.removeChild(canvas);
+      return;
+    }
+    requestAnimationFrame(animate);
+  }
+
+  function hexToRgb(hsl) {
+    // hsl to rgb conversion helper
+    // Since we use hsl string, convert to rgb approx
+    // For simplicity, return white rgb fallback
+    return "255,255,255";
+  }
+
+  animate();
+
+  // Feuerwerk nach 5 Sekunden entfernen
+  setTimeout(() => {
+    if (container.contains(canvas)) {
+      container.removeChild(canvas);
+    }
+  }, 5000);
+}
